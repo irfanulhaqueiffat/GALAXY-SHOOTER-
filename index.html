@@ -1,0 +1,632 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Arcade Air Combat</title>
+    <!-- Load Tailwind CSS for utility classes on the UI outside the canvas -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Use a custom font and dark theme for an arcade feel */
+        @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+
+        :root {
+            --arcade-font: 'Press Start 2P', cursive;
+            --main-bg: #1a1a2e;
+            --main-color: #e94560;
+            --accent-color: #007bff;
+        }
+
+        body {
+            font-family: var(--arcade-font);
+            background-color: var(--main-bg);
+            color: white;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 1rem;
+            flex-direction: column;
+            overflow: hidden; /* Prevent body scroll */
+        }
+
+        /* Styling for the game canvas */
+        canvas {
+            border: 4px solid var(--main-color);
+            background: linear-gradient(to bottom, #111111, #333333); /* Dark, textured sky */
+            box-shadow: 0 0 20px rgba(233, 69, 96, 0.7);
+            border-radius: 8px;
+            touch-action: none; /* Prevent default touch behavior */
+            display: block;
+            margin: 0 auto;
+        }
+
+        /* Style for the button */
+        .arcade-button {
+            padding: 10px 20px;
+            margin: 10px;
+            background-color: var(--main-color);
+            color: white;
+            border: 2px solid #fff;
+            border-radius: 6px;
+            cursor: pointer;
+            font-family: var(--arcade-font);
+            text-transform: uppercase;
+            font-size: 0.8rem;
+            box-shadow: 0 4px #c23146;
+            transition: all 0.1s;
+        }
+
+        .arcade-button:active {
+            box-shadow: 0 0 #c23146;
+            transform: translateY(4px);
+        }
+
+        .message-box {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background-color: rgba(0, 0, 0, 0.9);
+            border: 3px solid var(--main-color);
+            padding: 30px;
+            border-radius: 10px;
+            text-align: center;
+            z-index: 100;
+            box-shadow: 0 0 30px var(--main-color);
+            min-width: 300px;
+        }
+
+        .message-box h2 {
+            font-size: 1.5rem;
+            color: var(--main-color);
+            margin-bottom: 10px;
+        }
+
+        /* Mobile controls container */
+        .mobile-controls {
+            display: none;
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            padding: 10px;
+            background: rgba(0, 0, 0, 0.5);
+            justify-content: space-around;
+            z-index: 50;
+        }
+
+        /* Show mobile controls on small screens */
+        @media (max-width: 640px) {
+            .mobile-controls {
+                display: flex;
+            }
+            body {
+                padding-bottom: 70px; /* Space for controls */
+            }
+        }
+
+        .control-pad {
+            display: grid;
+            grid-template-areas: ". up ." "left fire right" ". down .";
+            gap: 5px;
+            width: 150px;
+            margin-right: 20px;
+        }
+
+        .control-btn {
+            background-color: #333;
+            color: white;
+            border: 1px solid var(--accent-color);
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 1rem;
+            user-select: none;
+            cursor: pointer;
+            transition: background-color 0.1s;
+        }
+        .control-btn:active {
+            background-color: var(--accent-color);
+        }
+
+        #up { grid-area: up; justify-self: center; }
+        #down { grid-area: down; justify-self: center; }
+        #left { grid-area: left; }
+        #right { grid-area: right; }
+        #fire-btn { grid-area: fire; border-radius: 8px; width: 60px; height: 60px; font-size: 0.7rem; background-color: var(--main-color); justify-self: center; align-self: center; }
+    </style>
+</head>
+<body>
+
+    <div class="text-center mb-4">
+        <h1 class="text-2xl text-yellow-300">ARCADE AIR COMBAT</h1>
+        <p class="text-sm text-gray-400 mt-1">Defend the Skies! Score: <span id="scoreDisplay">0</span></p>
+    </div>
+
+    <canvas id="gameCanvas" width="600" height="800"></canvas>
+
+    <!-- Game Over/Start Message Box -->
+    <div id="messageBox" class="message-box">
+        <h2 id="messageTitle">AIR COMBAT</h2>
+        <p id="messageText" class="text-sm my-4">Use Arrow Keys or A/S/D/W to Move. Spacebar to Fire.</p>
+        <button id="startButton" class="arcade-button">Start Game</button>
+    </div>
+
+    <!-- Mobile Controls (Displayed only on small screens) -->
+    <div class="mobile-controls">
+        <div class="control-pad">
+            <button id="up" class="control-btn" data-key="w">▲</button>
+            <button id="left" class="control-btn" data-key="a">◀</button>
+            <button id="fire-btn" class="control-btn" data-key=" "></button>
+            <button id="right" class="control-btn" data-key="d">▶</button>
+            <button id="down" class="control-btn" data-key="s">▼</button>
+        </div>
+        <div>
+            <button id="mobileFire" class="arcade-button">FIRE</button>
+        </div>
+    </div>
+
+    <script>
+        // --- GAME CONSTANTS AND INITIALIZATION ---
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const scoreDisplay = document.getElementById('scoreDisplay');
+        const messageBox = document.getElementById('messageBox');
+        const messageTitle = document.getElementById('messageTitle');
+        const messageText = document.getElementById('messageText');
+        const startButton = document.getElementById('startButton');
+        const mobileControls = document.querySelectorAll('.control-btn, #mobileFire');
+
+        let gameState = 'start'; // 'start', 'playing', 'gameover'
+        let score = 0;
+        let lastTime = 0;
+        let enemySpawnTimer = 0;
+        const ENEMY_SPAWN_INTERVAL = 1500; // ms
+
+        // Game objects arrays
+        let player = null;
+        let bullets = [];
+        let enemies = [];
+        let explosions = [];
+
+        // Input handling
+        let keys = {};
+        const inputMap = {
+            'ArrowUp': 'up', 'w': 'up',
+            'ArrowDown': 'down', 's': 'down',
+            'ArrowLeft': 'left', 'a': 'left',
+            'ArrowRight': 'right', 'd': 'right',
+            ' ': 'fire', 'Spacebar': 'fire' // Spacebar support for older browsers
+        };
+
+        // --- OBJECT CLASSES ---
+
+        /** Represents the Player Plane */
+        class Player {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                this.width = 40;
+                this.height = 40;
+                this.speed = 5;
+                this.color = 'lightblue';
+                this.cooldown = 0;
+                this.maxCooldown = 200; // ms
+            }
+
+            draw() {
+                // Use a simple plane emoji for visual style
+                ctx.font = '36px sans-serif';
+                ctx.textAlign = 'center';
+                // Rotate the plane slightly to look upward
+                ctx.save();
+                ctx.translate(this.x + this.width / 2, this.y + this.height / 2);
+                ctx.rotate(Math.PI); // Rotate 180 degrees
+                ctx.fillText('✈️', 0, 0); // Paper plane emoji
+                ctx.restore();
+            }
+
+            update(deltaTime) {
+                // Update cooldown
+                if (this.cooldown > 0) {
+                    this.cooldown -= deltaTime;
+                }
+
+                // Handle movement based on input keys
+                if (keys['up'] || keys['down'] || keys['left'] || keys['right']) {
+                    let dx = 0;
+                    let dy = 0;
+
+                    if (keys['up']) dy -= 1;
+                    if (keys['down']) dy += 1;
+                    if (keys['left']) dx -= 1;
+                    if (keys['right']) dx += 1;
+
+                    // Normalize diagonal movement speed
+                    if (dx !== 0 && dy !== 0) {
+                        const magnitude = Math.sqrt(dx * dx + dy * dy);
+                        dx /= magnitude;
+                        dy /= magnitude;
+                    }
+
+                    this.x += dx * this.speed;
+                    this.y += dy * this.speed;
+                }
+
+                // Keep player within bounds
+                this.x = Math.max(0, Math.min(canvas.width - this.width, this.x));
+                this.y = Math.max(canvas.height - 100, Math.min(canvas.height - this.height, this.y)); // Keep player near the bottom
+
+                // Handle firing
+                if (keys['fire'] && this.cooldown <= 0) {
+                    this.fire();
+                    this.cooldown = this.maxCooldown;
+                }
+            }
+
+            fire() {
+                // Spawn a bullet from the center of the plane
+                const bullet = new Bullet(
+                    this.x + this.width / 2,
+                    this.y,
+                    5, // size
+                    8, // speed
+                    '#ffff00' // yellow bullet
+                );
+                bullets.push(bullet);
+            }
+        }
+
+        /** Represents a Projectile (Bullet) */
+        class Bullet {
+            constructor(x, y, size, speed, color) {
+                this.x = x;
+                this.y = y;
+                this.size = size;
+                this.speed = speed;
+                this.color = color;
+                this.markedForDeletion = false;
+            }
+
+            draw() {
+                ctx.fillStyle = this.color;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size / 2, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            update() {
+                this.y -= this.speed; // Bullets fly up
+                if (this.y < 0) {
+                    this.markedForDeletion = true;
+                }
+            }
+        }
+
+        /** Represents an Enemy Ship */
+        class Enemy {
+            constructor(x, y, type) {
+                this.x = x;
+                this.y = y;
+                this.type = type; // 'standard', 'fast', 'tank'
+                this.markedForDeletion = false;
+                this.setupByType();
+            }
+
+            setupByType() {
+                switch (this.type) {
+                    case 'fast':
+                        this.width = 30;
+                        this.height = 20;
+                        this.speed = 3;
+                        this.color = '#ff6666'; // Red
+                        this.icon = '🚀';
+                        break;
+                    case 'tank':
+                        this.width = 50;
+                        this.height = 40;
+                        this.speed = 1;
+                        this.color = '#9999ff'; // Blue
+                        this.icon = '🛸';
+                        break;
+                    default: // standard
+                        this.width = 40;
+                        this.height = 30;
+                        this.speed = 2;
+                        this.color = '#cccccc'; // Gray
+                        this.icon = '👾';
+                        break;
+                }
+            }
+
+            draw() {
+                // Draw the emoji icon
+                ctx.font = `${this.width}px sans-serif`;
+                ctx.textAlign = 'center';
+                ctx.fillText(this.icon, this.x + this.width / 2, this.y + this.height);
+            }
+
+            update() {
+                this.y += this.speed; // Enemies fly down
+                if (this.y > canvas.height) {
+                    this.markedForDeletion = true;
+                    // Player loses a life or something severe when enemy passes by
+                    // For simplicity, we'll just delete it for now.
+                    // In a real game, this might trigger a penalty.
+                }
+            }
+        }
+
+        /** Represents a visual explosion effect */
+        class Explosion {
+            constructor(x, y, size) {
+                this.x = x;
+                this.y = y;
+                this.maxSize = size * 1.5;
+                this.currentSize = 5;
+                this.life = 10; // Frames of life
+                this.color = 'orange';
+                this.markedForDeletion = false;
+            }
+
+            draw() {
+                this.currentSize += (this.maxSize - this.currentSize) * 0.2;
+                this.life -= 0.5;
+
+                ctx.save();
+                ctx.globalAlpha = this.life / 10;
+                ctx.fillStyle = this.color;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.currentSize, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+
+                if (this.life <= 0) {
+                    this.markedForDeletion = true;
+                }
+            }
+            update() {
+                this.draw(); // Update logic is combined with draw for simple effects
+            }
+        }
+
+        // --- GAME LOGIC FUNCTIONS ---
+
+        function initGame() {
+            // Setup player near the bottom center
+            player = new Player(canvas.width / 2 - 20, canvas.height - 80);
+            bullets = [];
+            enemies = [];
+            explosions = [];
+            score = 0;
+            scoreDisplay.textContent = score;
+            enemySpawnTimer = 0;
+            gameState = 'playing';
+            messageBox.style.display = 'none';
+        }
+
+        function spawnEnemy() {
+            // Randomly choose enemy type
+            const types = ['standard', 'standard', 'fast', 'tank'];
+            const type = types[Math.floor(Math.random() * types.length)];
+            
+            let enemyWidth;
+            switch(type) {
+                case 'fast': enemyWidth = 30; break;
+                case 'tank': enemyWidth = 50; break;
+                default: enemyWidth = 40; break;
+            }
+
+            // Spawn enemy at a random X position near the top
+            const x = Math.random() * (canvas.width - enemyWidth);
+            const y = -enemyWidth; // Start off-screen
+            enemies.push(new Enemy(x, y, type));
+        }
+
+        /**
+         * Simple Axis-Aligned Bounding Box (AABB) collision check
+         */
+        function checkCollision(obj1, obj2) {
+            return (
+                obj1.x < obj2.x + obj2.width &&
+                obj1.x + obj1.size > obj2.x && // For bullets (size is width/height)
+                obj1.y < obj2.y + obj2.height &&
+                obj1.y + obj1.size > obj2.y // For bullets (size is width/height)
+            );
+        }
+
+        function handleCollisions() {
+            for (let i = 0; i < bullets.length; i++) {
+                for (let j = 0; j < enemies.length; j++) {
+                    const bullet = bullets[i];
+                    const enemy = enemies[j];
+
+                    // Adjust collision check for player-bullet intersection area
+                    // Bullets only have a size property, enemies have width/height
+                    const isColliding = (
+                        bullet.x < enemy.x + enemy.width &&
+                        bullet.x + bullet.size > enemy.x &&
+                        bullet.y < enemy.y + enemy.height &&
+                        bullet.y + bullet.size > enemy.y
+                    );
+
+                    if (isColliding) {
+                        // Mark both for deletion
+                        bullet.markedForDeletion = true;
+                        enemy.markedForDeletion = true;
+                        
+                        // Create an explosion effect
+                        explosions.push(new Explosion(enemy.x + enemy.width / 2, enemy.y + enemy.height / 2, enemy.width));
+
+                        // Increase score
+                        score += 10;
+                        scoreDisplay.textContent = score;
+                    }
+                }
+            }
+
+            // Player collision with enemies
+            for (let j = 0; j < enemies.length; j++) {
+                const enemy = enemies[j];
+
+                // AABB Check between player (x, y, w, h) and enemy (x, y, w, h)
+                const isPlayerColliding = (
+                    player.x < enemy.x + enemy.width &&
+                    player.x + player.width > enemy.x &&
+                    player.y < enemy.y + enemy.height &&
+                    player.y + player.height > enemy.y
+                );
+
+                if (isPlayerColliding) {
+                    gameOver();
+                    break;
+                }
+            }
+        }
+
+        function updateGame(deltaTime) {
+            // 1. Update Player
+            player.update(deltaTime);
+
+            // 2. Spawn Enemies
+            enemySpawnTimer += deltaTime;
+            if (enemySpawnTimer > ENEMY_SPAWN_INTERVAL) {
+                spawnEnemy();
+                enemySpawnTimer = 0;
+            }
+
+            // 3. Update Bullets and Enemies
+            bullets.forEach(bullet => bullet.update());
+            enemies.forEach(enemy => enemy.update());
+
+            // 4. Handle Collisions
+            handleCollisions();
+
+            // 5. Clean up deleted objects (using filter and creating new arrays is safe)
+            bullets = bullets.filter(bullet => !bullet.markedForDeletion);
+            enemies = enemies.filter(enemy => !enemy.markedForDeletion);
+            explosions = explosions.filter(exp => !exp.markedForDeletion);
+        }
+
+        function drawGame() {
+            // Clear canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Draw game objects
+            player.draw();
+            bullets.forEach(bullet => bullet.draw());
+            enemies.forEach(enemy => enemy.draw());
+            explosions.forEach(exp => exp.update()); // Explosions draw themselves via update/draw combo
+        }
+
+        function gameOver() {
+            gameState = 'gameover';
+            messageTitle.textContent = 'GAME OVER!';
+            messageText.innerHTML = `Final Score: <span class="text-xl text-yellow-300">${score}</span><br>You were shot down!`;
+            startButton.textContent = 'Play Again';
+            messageBox.style.display = 'block';
+        }
+
+        // --- MAIN GAME LOOP ---
+
+        function gameLoop(timestamp) {
+            const deltaTime = timestamp - lastTime;
+            lastTime = timestamp;
+
+            if (gameState === 'playing') {
+                updateGame(deltaTime);
+                drawGame();
+            }
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        // --- EVENT LISTENERS ---
+
+        // Keyboard Input (Desktop/Laptop)
+        window.addEventListener('keydown', (e) => {
+            const key = e.key.toLowerCase();
+            if (inputMap[key]) {
+                keys[inputMap[key]] = true;
+                if (inputMap[key] === 'fire' || key === ' ') {
+                    e.preventDefault(); // Prevent spacebar from scrolling page
+                }
+            }
+            if (key === 'escape' && gameState === 'playing') {
+                // Simple pause function
+                messageTitle.textContent = 'PAUSED';
+                messageText.textContent = 'Press Start Game to resume.';
+                startButton.textContent = 'Resume';
+                messageBox.style.display = 'block';
+                gameState = 'paused';
+            }
+        });
+
+        window.addEventListener('keyup', (e) => {
+            const key = e.key.toLowerCase();
+            if (inputMap[key]) {
+                keys[inputMap[key]] = false;
+            }
+        });
+
+        // Start button handler
+        startButton.addEventListener('click', () => {
+            if (gameState === 'start' || gameState === 'gameover') {
+                initGame();
+            } else if (gameState === 'paused') {
+                gameState = 'playing';
+                messageBox.style.display = 'none';
+            }
+        });
+
+        // Mobile Controls (Touch/Click)
+        const fireButton = document.getElementById('mobileFire');
+
+        mobileControls.forEach(btn => {
+            const key = btn.dataset.key;
+            if (key) {
+                // Touch Start (Simulate keydown)
+                btn.addEventListener('touchstart', (e) => {
+                    e.preventDefault();
+                    if (gameState === 'playing') {
+                        keys[inputMap[key]] = true;
+                    }
+                });
+                // Touch End (Simulate keyup)
+                btn.addEventListener('touchend', (e) => {
+                    e.preventDefault();
+                    if (gameState === 'playing') {
+                        keys[inputMap[key]] = false;
+                    }
+                });
+            }
+        });
+
+        // Special handling for the dedicated FIRE button
+        fireButton.addEventListener('click', (e) => {
+             e.preventDefault();
+             if (gameState === 'playing') {
+                // Simulate a quick press and release for fire
+                keys['fire'] = true;
+                setTimeout(() => { keys['fire'] = false; }, 50); // Small delay to register shot
+             }
+        });
+
+
+        // --- STARTUP ---
+        window.onload = function () {
+            // Center the player on start
+            player = new Player(canvas.width / 2 - 20, canvas.height - 80);
+
+            // Start the main loop
+            requestAnimationFrame(gameLoop);
+        }
+
+    </script>
+</body>
+</html>
