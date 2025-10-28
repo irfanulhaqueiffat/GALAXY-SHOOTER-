@@ -34,7 +34,7 @@
         /* Styling for the game canvas */
         canvas {
             border: 4px solid var(--main-color);
-            background: linear-gradient(to bottom, #111111, #333333); /* Dark, textured sky */
+            background:url(./image/unnamed.jpg); /* Dark, textured sky */
             box-shadow: 0 0 20px rgba(233, 69, 96, 0.7);
             border-radius: 8px;
             touch-action: none; /* Prevent default touch behavior */
@@ -148,7 +148,7 @@
         <p class="text-sm text-gray-400 mt-1">Defend the Skies! Score: <span id="scoreDisplay">0</span></p>
     </div>
 
-    <canvas id="gameCanvas" width="600" height="800"></canvas>
+    <canvas id="gameCanvas" width="800" height="1000"></canvas>
 
     <!-- Game Over/Start Message Box -->
     <div id="messageBox" class="message-box">
@@ -188,6 +188,23 @@
         let enemySpawnTimer = 0;
         const ENEMY_SPAWN_INTERVAL = 1500; // ms
 
+        // Starfield for background animation
+        let stars = [];
+        const STAR_COUNT = 80;
+
+        function initStars() {
+            stars = [];
+            for (let i = 0; i < STAR_COUNT; i++) {
+                stars.push({
+                    x: Math.random() * canvas.width,
+                    y: Math.random() * canvas.height,
+                    size: Math.random() * 2 + 0.5,
+                    speed: Math.random() * 0.6 + 0.2,
+                    flicker: Math.random() * Math.PI * 2
+                });
+            }
+        }
+
         // Game objects arrays
         let player = null;
         let bullets = [];
@@ -217,19 +234,56 @@
                 this.color = 'lightblue';
                 this.cooldown = 0;
                 this.maxCooldown = 200; // ms
+                this.vx = 0;
+                this.vy = 0;
+                this.angle = 0; // radians for tilt animation
             }
 
             draw() {
-                // Use a simple plane emoji for visual style
-                ctx.font = '36px sans-serif';
-                ctx.textAlign = 'center';
-                // Rotate the plane slightly to look upward
+                // Draw a simple spaceship with tilt and thruster
+                const cx = this.x + this.width / 2;
+                const cy = this.y + this.height / 2;
                 ctx.save();
-                ctx.translate(this.x + this.width / 2, this.y + this.height / 2);
-                ctx.rotate(Math.PI); // Rotate 180 degrees
-                ctx.fillText('✈️', 0, 0); // Paper plane emoji
+                ctx.translate(cx, cy);
+                ctx.rotate(this.angle);
+
+                // Body
+                ctx.fillStyle = '#9bd3ff';
+                ctx.beginPath();
+                ctx.moveTo(0, -this.height / 2); // nose
+                ctx.lineTo(this.width / 2, this.height / 2);
+                ctx.lineTo(-this.width / 2, this.height / 2);
+                ctx.closePath();
+                ctx.fill();
+
+                // Cockpit
+                ctx.fillStyle = '#003f5c';
+                ctx.beginPath();
+                ctx.ellipse(0, -2, this.width * 0.25, this.height * 0.18, 0, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Wing highlights
+                ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.moveTo(-this.width / 4, 0);
+                ctx.lineTo(this.width / 4, 0);
+                ctx.stroke();
+
+                // Thruster flame when moving or firing
+                const moving = Math.abs(this.vx) > 0.1 || Math.abs(this.vy) > 0.1;
+                const flameSize = moving ? (Math.random() * 6 + 8) : (Math.random() * 3 + 4);
+                ctx.fillStyle = moving ? 'orange' : 'rgba(255,165,0,0.6)';
+                ctx.beginPath();
+                ctx.moveTo(-8, this.height / 2);
+                ctx.lineTo(8, this.height / 2);
+                ctx.lineTo(0, this.height / 2 + flameSize);
+                ctx.closePath();
+                ctx.fill();
+
                 ctx.restore();
             }
+
 
             update(deltaTime) {
                 // Update cooldown
@@ -238,7 +292,7 @@
                 }
 
                 // Handle movement based on input keys
-                if (keys['up'] || keys['down'] || keys['left'] || keys['right']) {
+                {
                     let dx = 0;
                     let dy = 0;
 
@@ -254,8 +308,15 @@
                         dy /= magnitude;
                     }
 
-                    this.x += dx * this.speed;
-                    this.y += dy * this.speed;
+                    // Set velocity and apply
+                    this.vx = dx * this.speed;
+                    this.vy = dy * this.speed;
+                    this.x += this.vx;
+                    this.y += this.vy;
+
+                    // Tilt the ship slightly toward movement direction (smooth)
+                    const targetAngle = -dx * 0.7; // tilt scale
+                    this.angle += (targetAngle - this.angle) * 0.18;
                 }
 
                 // Keep player within bounds
@@ -319,45 +380,109 @@
             }
 
             setupByType() {
+                // Define visual/behavioral parameters per type
                 switch (this.type) {
                     case 'fast':
                         this.width = 30;
                         this.height = 20;
-                        this.speed = 3;
-                        this.color = '#ff6666'; // Red
-                        this.icon = '🚀';
+                        this.speed = 3.2;
+                        this.color = '#ff8b7b'; // bright red/orange
+                        this.rotationSpeed = 0.12;
+                        this.bobAmp = 2.5;
                         break;
                     case 'tank':
                         this.width = 50;
                         this.height = 40;
-                        this.speed = 1;
-                        this.color = '#9999ff'; // Blue
-                        this.icon = '🛸';
+                        this.speed = 0.9;
+                        this.color = '#99b3ff'; // bluish
+                        this.rotationSpeed = -0.04;
+                        this.bobAmp = 6;
                         break;
                     default: // standard
                         this.width = 40;
                         this.height = 30;
                         this.speed = 2;
-                        this.color = '#cccccc'; // Gray
-                        this.icon = '👾';
+                        this.color = '#e0d1ff'; // pale
+                        this.rotationSpeed = 0.06;
+                        this.bobAmp = 4;
                         break;
                 }
+
+                this.angle = 0;
+                this.bobPhase = Math.random() * Math.PI * 2;
             }
 
             draw() {
-                // Draw the emoji icon
-                ctx.font = `${this.width}px sans-serif`;
-                ctx.textAlign = 'center';
-                ctx.fillText(this.icon, this.x + this.width / 2, this.y + this.height);
+                // Animated enemy drawing depending on type
+                const cx = this.x + this.width / 2;
+                const bob = Math.sin(this.bobPhase) * this.bobAmp;
+                const cy = this.y + this.height / 2 + bob;
+
+                ctx.save();
+                ctx.translate(cx, cy);
+                ctx.rotate(this.angle);
+
+                if (this.type === 'fast') {
+                    // Rocket-like enemy
+                    ctx.fillStyle = this.color;
+                    ctx.beginPath();
+                    ctx.moveTo(0, -this.height / 2);
+                    ctx.lineTo(this.width / 2, this.height / 2);
+                    ctx.lineTo(-this.width / 2, this.height / 2);
+                    ctx.closePath();
+                    ctx.fill();
+
+                    // Small pulsating flame
+                    const flame = 4 + Math.abs(Math.sin(this.bobPhase)) * 6;
+                    ctx.fillStyle = 'orange';
+                    ctx.beginPath();
+                    ctx.moveTo(-6, this.height / 2);
+                    ctx.lineTo(6, this.height / 2);
+                    ctx.lineTo(0, this.height / 2 + flame);
+                    ctx.closePath();
+                    ctx.fill();
+
+                } else if (this.type === 'tank') {
+                    // Saucer with rotating ring
+                    // Body
+                    ctx.fillStyle = this.color;
+                    ctx.beginPath();
+                    ctx.ellipse(0, 0, this.width / 2, this.height / 3, 0, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    // Rotating rim
+                    ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+                    ctx.lineWidth = 3;
+                    ctx.beginPath();
+                    ctx.ellipse(0, 0, this.width / 1.1, this.height / 2.2, this.angle * 2, 0, Math.PI * 2);
+                    ctx.stroke();
+
+                } else {
+                    // Standard type - hovering core with pulsing center
+                    ctx.fillStyle = this.color;
+                    ctx.beginPath();
+                    ctx.ellipse(0, 0, this.width / 2, this.height / 2.5, 0, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    // Pulsing eye
+                    const pulse = 1 + Math.sin(this.bobPhase * 1.5) * 0.4;
+                    ctx.fillStyle = '#8a2be2';
+                    ctx.beginPath();
+                    ctx.arc(0, 0, (this.width / 6) * pulse, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+
+                ctx.restore();
             }
 
             update() {
+                // bobbing and rotation
+                this.bobPhase += 0.06;
+                this.angle += this.rotationSpeed || 0.05;
+
                 this.y += this.speed; // Enemies fly down
-                if (this.y > canvas.height) {
+                if (this.y > canvas.height + this.height) {
                     this.markedForDeletion = true;
-                    // Player loses a life or something severe when enemy passes by
-                    // For simplicity, we'll just delete it for now.
-                    // In a real game, this might trigger a penalty.
                 }
             }
         }
@@ -375,15 +500,32 @@
             }
 
             draw() {
-                this.currentSize += (this.maxSize - this.currentSize) * 0.2;
-                this.life -= 0.5;
+                this.currentSize += (this.maxSize - this.currentSize) * 0.25;
+                this.life -= 0.6;
 
                 ctx.save();
-                ctx.globalAlpha = this.life / 10;
-                ctx.fillStyle = this.color;
+                ctx.globalCompositeOperation = 'lighter';
+                ctx.globalAlpha = Math.max(0, this.life / 10);
+
+                // radial starburst lines
+                const spikes = 8 + Math.floor(Math.random() * 6);
+                for (let i = 0; i < spikes; i++) {
+                    const a = (i / spikes) * Math.PI * 2 + Math.random() * 0.2;
+                    const len = this.currentSize * (0.6 + Math.random() * 0.8);
+                    ctx.strokeStyle = i % 2 === 0 ? 'orange' : 'yellow';
+                    ctx.lineWidth = 1.5;
+                    ctx.beginPath();
+                    ctx.moveTo(this.x + Math.cos(a) * (this.currentSize * 0.2), this.y + Math.sin(a) * (this.currentSize * 0.2));
+                    ctx.lineTo(this.x + Math.cos(a) * len, this.y + Math.sin(a) * len);
+                    ctx.stroke();
+                }
+
+                // soft center
+                ctx.fillStyle = 'rgba(255,200,50,0.6)';
                 ctx.beginPath();
-                ctx.arc(this.x, this.y, this.currentSize, 0, Math.PI * 2);
+                ctx.arc(this.x, this.y, this.currentSize * 0.4, 0, Math.PI * 2);
                 ctx.fill();
+
                 ctx.restore();
 
                 if (this.life <= 0) {
@@ -406,6 +548,8 @@
             score = 0;
             scoreDisplay.textContent = score;
             enemySpawnTimer = 0;
+            // Initialize background stars
+            initStars();
             gameState = 'playing';
             messageBox.style.display = 'none';
         }
@@ -517,6 +661,17 @@
             // Clear canvas
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
+            // Draw and update starfield (background)
+            for (let i = 0; i < stars.length; i++) {
+                const s = stars[i];
+                s.y += s.speed;
+                s.flicker += 0.06;
+                if (s.y > canvas.height) s.y = 0;
+                const alpha = 0.5 + Math.sin(s.flicker) * 0.4;
+                ctx.fillStyle = `rgba(255,255,255,${alpha.toFixed(2)})`;
+                ctx.fillRect(s.x, s.y, s.size, s.size);
+            }
+
             // Draw game objects
             player.draw();
             bullets.forEach(bullet => bullet.draw());
@@ -620,10 +775,11 @@
 
         // --- STARTUP ---
         window.onload = function () {
-            // Center the player on start
+            // Initialize starfield and center the player on start
+            initStars();
             player = new Player(canvas.width / 2 - 20, canvas.height - 80);
 
-            // Start the main loop
+            // Start the main loop (game will not start until player presses Start)
             requestAnimationFrame(gameLoop);
         }
 
